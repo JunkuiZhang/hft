@@ -18,6 +18,7 @@ set(LIBRARY_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/lib)
 add_executable(hft_engine
     src/main.cpp
     src/market/MockMdReceiver.cpp
+    src/strategy/StrategyEngine.cpp
 )
 
 target_include_directories(hft_engine PRIVATE include)
