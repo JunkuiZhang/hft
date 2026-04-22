@@ -12,29 +12,32 @@ namespace market {
 using TickQueue = core::SpscQueue<core::TickData, 1024>;
 
 class MockMdReceiver {
-public:
-  explicit MockMdReceiver(TickQueue &queue);
-  ~MockMdReceiver();
+  public:
+    explicit MockMdReceiver(TickQueue &queue);
+    ~MockMdReceiver();
 
-  // Disable copy and move
-  MockMdReceiver(const MockMdReceiver &) = delete;
-  MockMdReceiver &operator=(const MockMdReceiver &) = delete;
-  MockMdReceiver(MockMdReceiver &&) = delete;
-  MockMdReceiver &operator=(MockMdReceiver &&) = delete;
+    // Disable copy and move
+    MockMdReceiver(const MockMdReceiver &) = delete;
+    MockMdReceiver &operator=(const MockMdReceiver &) = delete;
+    MockMdReceiver(MockMdReceiver &&) = delete;
+    MockMdReceiver &operator=(MockMdReceiver &&) = delete;
 
-  // Start the mock receiver thread
-  void start();
+    // Start the mock receiver thread
+    void start();
 
-  // Stop the mock receiver thread
-  void stop();
+    // Stop the mock receiver thread
+    void stop();
 
-private:
-  void threadLoop();
-  void generateTick(core::TickData &tick);
+    // Get the worker thread mapped to cores
+    std::thread &getThread() { return worker_thread_; }
 
-  TickQueue &queue_;
-  std::atomic<bool> running_{false};
-  std::thread worker_thread_;
+  private:
+    void threadLoop();
+    void generateTick(core::TickData &tick);
+
+    TickQueue &queue_;
+    std::atomic<bool> running_{false};
+    std::thread worker_thread_;
 };
 
 } // namespace market

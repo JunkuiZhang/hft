@@ -28,6 +28,9 @@ class StrategyEngine {
     // Stop the strategy polling thread
     void stop();
 
+    // Get the worker thread mapped to cores
+    std::thread &getThread() { return worker_thread_; }
+
   private:
     void threadLoop();
 

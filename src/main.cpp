@@ -5,7 +5,25 @@
 #include <chrono>
 #include <cstddef>
 #include <iostream>
+#include <pthread.h> // For thread affinity
 #include <thread>
+
+void pin_thread_to_core(std::thread &t, int core_id) {
+    if (!t.joinable())
+        return;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_id, &cpuset);
+
+    int rc =
+        pthread_setaffinity_np(t.native_handle(), sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\\n";
+    } else {
+        std::cout << "Successfully pinned thread to core " << core_id << "\\n";
+    }
+}
 
 int main() {
     std::cout << "--- HFT Engine (C++20) ---" << std::endl;
@@ -36,9 +54,13 @@ int main() {
 
     // Start strategy thread (busy polling)
     strategy.start();
+    // Pin strategy thread to core 3
+    pin_thread_to_core(strategy.getThread(), 3);
 
     // Start generating market data
     receiver.start();
+    // Pin market receiver thread to core 2
+    pin_thread_to_core(receiver.getThread(), 2);
 
     // Run simulation for exactly 10 milliseconds
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
