@@ -1,6 +1,5 @@
 #include "strategy/StrategyEngine.h"
 #include <chrono>
-#include <cmath>
 #include <cstring>
 #include <iostream>
 
@@ -82,7 +81,7 @@ void StrategyEngine::threadLoop() {
             std::cout << "[Strategy] Sym: " << tick.symbol
                       << " | DeltaT: " << delta_t << " ns"
                       << " | OBI: " << obi << " | Bid1V: " << bid1_vol
-                      << " Ask1V: " << ask1_vol << "\\n";
+                      << " Ask1V: " << ask1_vol << "\n";
         }
     }
 }

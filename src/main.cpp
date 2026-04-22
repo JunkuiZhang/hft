@@ -3,7 +3,6 @@
 #include "market/MockMdReceiver.h"
 #include "strategy/StrategyEngine.h"
 #include <chrono>
-#include <cstddef>
 #include <iostream>
 #include <pthread.h> // For thread affinity
 #include <thread>
@@ -19,9 +18,9 @@ void pin_thread_to_core(std::thread &t, int core_id) {
     int rc =
         pthread_setaffinity_np(t.native_handle(), sizeof(cpu_set_t), &cpuset);
     if (rc != 0) {
-        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\\n";
+        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
     } else {
-        std::cout << "Successfully pinned thread to core " << core_id << "\\n";
+        std::cout << "Successfully pinned thread to core " << core_id << "\n";
     }
 }
 
@@ -33,20 +32,20 @@ int main() {
     std::cout << "  alignof(TickData): " << alignof(hft::core::TickData)
               << " bytes" << std::endl;
 
-    std::cout << "\\nOrderSignal Memory Layout:" << std::endl;
+    std::cout << "\nOrderSignal Memory Layout:" << std::endl;
     std::cout << "  sizeof(OrderSignal):  " << sizeof(hft::core::OrderSignal)
               << " bytes" << std::endl;
     std::cout << "  alignof(OrderSignal): " << alignof(hft::core::OrderSignal)
               << " bytes" << std::endl;
 
-    std::cout << "\\nSpscQueue Layout:" << std::endl;
+    std::cout << "\nSpscQueue Layout:" << std::endl;
     using TickQueue = hft::core::SpscQueue<hft::core::TickData, 1024>;
     std::cout << "  sizeof(TickQueue): " << sizeof(TickQueue) << " bytes"
               << std::endl;
     std::cout << "  alignof(TickQueue): " << alignof(TickQueue) << " bytes"
               << std::endl;
 
-    std::cout << "\\nStarting Complete HFT Pipeline Test..." << std::endl;
+    std::cout << "\nStarting Complete HFT Pipeline Test..." << std::endl;
     TickQueue queue;
 
     hft::market::MockMdReceiver receiver(queue);
