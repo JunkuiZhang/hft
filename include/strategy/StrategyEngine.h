@@ -2,18 +2,21 @@
 
 #include "core/SpscQueue.h"
 #include "core/Types.h"
+#include <array>
 #include <atomic>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace hft {
 namespace strategy {
 
 using TickQueue = core::SpscQueue<core::TickData, 1024>;
+using OrderQueue = core::SpscQueue<core::OrderSignal, 1024>;
 
 class StrategyEngine {
   public:
-    explicit StrategyEngine(TickQueue &queue);
+    explicit StrategyEngine(TickQueue &queue, OrderQueue &order_queue);
     ~StrategyEngine();
 
     // Disable copy and move
@@ -34,17 +37,19 @@ class StrategyEngine {
   private:
     void threadLoop();
 
-    // Flat order book implementation to ensure L1 Cache performance
-    // Avoids map/unordered_map. Uses simple linear search for a small number of
-    // symbols or direct indexing if symbols are mapped to integers previously.
-    void updateOrderBook(const core::TickData &tick);
-
     TickQueue &queue_;
+    OrderQueue &order_queue_;
     std::atomic<bool> running_{false};
     std::thread worker_thread_;
 
-    // Flattened contiguous memory cache for order books to prevent cache misses
-    std::vector<core::TickData> flat_order_book_;
+    // Static array memory cache for order books to prevent cache misses O(1)
+    std::array<core::TickData, 256> flat_order_book_;
+
+    // Mapping table: maps 8-byte symbol string to 0-255 index
+    std::unordered_map<uint64_t, uint8_t> symbol_idx_map_;
+
+    // Latency statistics (CPU Cycles)
+    std::vector<uint64_t> latency_stats_;
 };
 
 } // namespace strategy

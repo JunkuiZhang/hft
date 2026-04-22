@@ -1,5 +1,6 @@
 #include "core/SpscQueue.h"
 #include "core/Types.h"
+#include "execution/ExecutionEngine.h"
 #include "market/MockMdReceiver.h"
 #include "strategy/StrategyEngine.h"
 #include <chrono>
@@ -45,11 +46,19 @@ int main() {
     std::cout << "  alignof(TickQueue): " << alignof(TickQueue) << " bytes"
               << std::endl;
 
-    std::cout << "\nStarting Complete HFT Pipeline Test..." << std::endl;
-    TickQueue queue;
+    std::cout << "\\nStarting Complete HFT Pipeline Test..." << std::endl;
+    using OrderQueue = hft::core::SpscQueue<hft::core::OrderSignal, 1024>;
 
-    hft::market::MockMdReceiver receiver(queue);
-    hft::strategy::StrategyEngine strategy(queue);
+    TickQueue tick_queue;
+    OrderQueue order_queue;
+
+    hft::execution::ExecutionEngine execution(order_queue);
+    hft::market::MockMdReceiver receiver(tick_queue);
+    hft::strategy::StrategyEngine strategy(tick_queue, order_queue);
+
+    // Start execution thread on core 4
+    execution.start();
+    pin_thread_to_core(execution.getThread(), 4);
 
     // Start strategy thread (busy polling)
     strategy.start();
@@ -61,11 +70,12 @@ int main() {
     // Pin market receiver thread to core 2
     pin_thread_to_core(receiver.getThread(), 2);
 
-    // Run simulation for exactly 10 milliseconds
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Run simulation for exactly 1500 milliseconds (to accumulate >1000 ticks)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
     receiver.stop();
     strategy.stop();
+    execution.stop();
 
     std::cout << "Done!" << std::endl;
 

@@ -1,15 +1,21 @@
 #include "strategy/StrategyEngine.h"
-#include <chrono>
+#include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <x86intrin.h>
 
 namespace hft {
 namespace strategy {
 
-StrategyEngine::StrategyEngine(TickQueue &queue)
-    : queue_(queue), running_(false) {
-    // Reserve space to avoid reallocations during runtime
-    flat_order_book_.reserve(128);
+StrategyEngine::StrategyEngine(TickQueue &queue, OrderQueue &order_queue)
+    : queue_(queue), order_queue_(order_queue), running_(false) {
+    // Reserve space to avoid reallocations during runtime hot path
+    latency_stats_.reserve(100000);
+
+    // Initialize mapping table: "rb2410" -> index 0
+    uint64_t key = 0;
+    std::memcpy(&key, "rb2410\0\0", 8);
+    symbol_idx_map_[key] = 0;
 }
 
 StrategyEngine::~StrategyEngine() { stop(); }
@@ -26,22 +32,26 @@ void StrategyEngine::stop() {
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }
-}
 
-void StrategyEngine::updateOrderBook(const core::TickData &tick) {
-    // Linear scan for symbol in flat_order_book
-    // For small sets of instruments, linear array scan is faster than map
-    // lookups due to contiguous memory
-    for (auto &entry : flat_order_book_) {
-        if (std::strncmp(entry.symbol, tick.symbol,
-                         sizeof(core::TickData::symbol)) == 0) {
-            entry = tick; // Update latest snapshot
-            return;
-        }
+    if (!latency_stats_.empty()) {
+        std::sort(latency_stats_.begin(), latency_stats_.end());
+        size_t count = latency_stats_.size();
+        uint64_t min_lat = latency_stats_.front();
+        size_t p99_idx = count * 99 / 100;
+        uint64_t p99_lat = latency_stats_[p99_idx];
+
+        uint64_t sum = 0;
+        for (auto lat : latency_stats_)
+            sum += lat;
+        uint64_t avg_lat = sum / count;
+
+        std::cout << "\n--- Strategy Engine Benchmark ---\n"
+                  << "Total Ticks: " << count << std::endl
+                  << "Min Latency: " << min_lat << " CPU Cycles\n"
+                  << "Avg Latency: " << avg_lat << " CPU Cycles\n"
+                  << "P99 Latency: " << p99_lat << " CPU Cycles\n"
+                  << "-----------------------------------\n";
     }
-
-    // Symbol not found, append it
-    flat_order_book_.push_back(tick);
 }
 
 void StrategyEngine::threadLoop() {
@@ -50,21 +60,26 @@ void StrategyEngine::threadLoop() {
     // Busy polling loop - no sleep/yield to ensure lowest latency
     while (running_.load(std::memory_order_acquire)) {
         if (queue_.pop(tick)) [[likely]] {
-            // T2 Timestamp: immediately after popping the value from the queue
-            auto now = std::chrono::high_resolution_clock::now();
-            uint64_t t2 = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              now.time_since_epoch())
-                              .count();
+            // T2 Timestamp: calculate CPU cycles taken for penetration
+            uint64_t t2 = __rdtsc();
 
-            // Calculate Latency (Delta T)
-            uint64_t delta_t = t2 - tick.local_timestamp;
+            // Calculate Latency (Delta Cycles)
+            uint64_t delta_cycles = t2 - tick.local_timestamp;
+            latency_stats_.push_back(delta_cycles);
 
-            // Update flat order book cache
-            updateOrderBook(tick);
+            // Fast mapping O(1) without strncmp
+            uint64_t key;
+            std::memcpy(&key, tick.symbol, 8);
+
+            auto it = symbol_idx_map_.find(key);
+            if (it != symbol_idx_map_.end()) [[likely]] {
+                flat_order_book_[it->second] =
+                    tick; // Update O(1) using static array
+            }
 
             // Compute OBI (Order Book Imbalance) based on level 1 bid and ask
             // volume
-            double obi = 0.0;
+            double obi [[maybe_unused]] = 0.0;
             uint32_t bid1_vol = tick.bids[0].volume;
             uint32_t ask1_vol = tick.asks[0].volume;
             uint32_t total_vol = bid1_vol + ask1_vol;
@@ -75,13 +90,25 @@ void StrategyEngine::threadLoop() {
                 obi = (static_cast<double>(bid1_vol) -
                        static_cast<double>(ask1_vol)) /
                       static_cast<double>(total_vol);
-            }
 
-            // Print info
-            std::cout << "[Strategy] Sym: " << tick.symbol
-                      << " | DeltaT: " << delta_t << " ns"
-                      << " | OBI: " << obi << " | Bid1V: " << bid1_vol
-                      << " Ask1V: " << ask1_vol << "\n";
+                // Trigger an order if imbalance is strongly on ask side and we
+                // have sufficient stats collected
+                if (obi < -0.8 && latency_stats_.size() >= 1000) [[unlikely]] {
+                    core::OrderSignal signal;
+                    std::memcpy(signal.symbol, tick.symbol,
+                                sizeof(signal.symbol));
+                    signal.price =
+                        tick.asks[0].price; // Take the ask 1 price to buy
+                    signal.volume = 1;
+                    signal.action = core::OrderAction::Buy;
+                    signal.timestamp =
+                        __rdtsc(); // Set TS exactly before pushing
+
+                    if (!order_queue_.push(signal)) {
+                        // Drop signal if queue full
+                    }
+                }
+            }
         }
     }
 }

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstring>
 #include <random>
+#include <x86intrin.h>
 
 namespace hft {
 namespace market {
@@ -53,13 +54,8 @@ void MockMdReceiver::threadLoop() {
             tick.asks[i].volume = volume_dist(generator);
         }
 
-        // T1 Timestamp: Record High-Precision local time exactly before
-        // pushing. This is the penetration latency origin.
-        auto now = std::chrono::high_resolution_clock::now();
-        tick.local_timestamp =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                now.time_since_epoch())
-                .count();
+        // T1 Timestamp: Record CPU cycles exactly before pushing.
+        tick.local_timestamp = __rdtsc();
 
         // Push data to the lock-free ring buffer
         // If queue is full, this will spin (or just drop the tick, we drop here
