@@ -1,5 +1,7 @@
 #include "core/SpscQueue.h"
 #include "core/Types.h"
+#include "market/MockMdReceiver.h"
+#include <chrono>
 #include <cstddef>
 #include <iostream>
 #include <thread>
@@ -25,28 +27,44 @@ int main() {
   std::cout << "  alignof(TickQueue): " << alignof(TickQueue) << " bytes"
             << std::endl;
 
-  // Small SPSC Test
+  std::cout << "\\nStarting Mock Market Data Receiver Test..." << std::endl;
   TickQueue queue;
-  std::thread producer([&queue]() {
-    hft::core::TickData tick{};
-    tick.last_price = 100.5;
-    tick.volume = 10;
-    while (!queue.push(tick)) {
-      std::this_thread::yield();
-    }
-  });
 
+  hft::market::MockMdReceiver receiver(queue);
+
+  // Start generating market data
+  receiver.start();
+
+  // Consumer thread
   std::thread consumer([&queue]() {
     hft::core::TickData tick;
-    while (!queue.pop(tick)) {
-      std::this_thread::yield();
+    int received_count = 0;
+    while (received_count < 10) { // Wait for 10 ticks
+      if (queue.pop(tick)) {
+        auto now_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch())
+                .count();
+
+        // Compute penetration latency
+        uint64_t latency = now_ns - tick.local_timestamp;
+
+        std::cout << "[Consumer] Symbol: " << tick.symbol
+                  << " | Price: " << tick.last_price
+                  << " | T1: " << tick.local_timestamp
+                  << " | Latency: " << latency << " ns\\n";
+
+        received_count++;
+      } else {
+        std::this_thread::yield();
+      }
     }
-    std::cout << "\\n[Consumer] Received tick with price: " << tick.last_price
-              << ", volume: " << tick.volume << std::endl;
   });
 
-  producer.join();
   consumer.join();
+  receiver.stop();
+
+  std::cout << "Done!" << std::endl;
 
   return 0;
 }
