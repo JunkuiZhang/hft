@@ -47,10 +47,15 @@ void StrategyEngine::stop() {
 
         std::cout << "\n--- Strategy Engine Benchmark ---\n"
                   << "Total Ticks: " << count << std::endl
-                  << "Min Latency: " << min_lat << " CPU Cycles\n"
-                  << "Avg Latency: " << avg_lat << " CPU Cycles\n"
-                  << "P99 Latency: " << p99_lat << " CPU Cycles\n"
+                  << "Min Latency: " << min_lat << " CPU Cycles ("
+                  << core::cycles_to_ns(min_lat) << " ns)\n"
+                  << "Avg Latency: " << avg_lat << " CPU Cycles ("
+                  << core::cycles_to_ns(avg_lat) << " ns)\n"
+                  << "P99 Latency: " << p99_lat << " CPU Cycles ("
+                  << core::cycles_to_ns(p99_lat) << " ns)\n"
                   << "-----------------------------------\n";
+
+        latency_stats_.clear();
     }
 }
 
@@ -61,7 +66,7 @@ void StrategyEngine::threadLoop() {
     while (running_.load(std::memory_order_acquire)) {
         if (queue_.pop(tick)) [[likely]] {
             // T2 Timestamp: calculate CPU cycles taken for penetration
-            uint64_t t2 = __rdtsc();
+            uint64_t t2 = core::rdtsc_end();
 
             // Calculate Latency (Delta Cycles)
             uint64_t delta_cycles = t2 - tick.local_timestamp;
@@ -93,16 +98,19 @@ void StrategyEngine::threadLoop() {
 
                 // Trigger an order if imbalance is strongly on ask side and we
                 // have sufficient stats collected
-                if (obi < -0.8 && latency_stats_.size() >= 1000) [[unlikely]] {
+                if (obi > 0.8 && latency_stats_.size() >= 1000) [[unlikely]] {
                     core::OrderSignal signal;
                     std::memcpy(signal.symbol, tick.symbol,
                                 sizeof(signal.symbol));
                     signal.price =
-                        tick.asks[0].price; // Take the ask 1 price to buy
+                        tick.bids[0].price; // Take the bid 1 price if we are
+                                            // selling due to bid strength
                     signal.volume = 1;
                     signal.action = core::OrderAction::Buy;
-                    signal.timestamp =
-                        __rdtsc(); // Set TS exactly before pushing
+                    signal.tick_timestamp =
+                        tick.local_timestamp; // T1 (Arrival)
+                    signal.signal_timestamp =
+                        core::rdtsc_start(); // T3 (Signal Generation)
 
                     if (!order_queue_.push(signal)) {
                         // Drop signal if queue full

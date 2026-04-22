@@ -27,6 +27,8 @@ void pin_thread_to_core(std::thread &t, int core_id) {
 
 int main() {
     std::cout << "--- HFT Engine (C++20) ---" << std::endl;
+    hft::core::calibrate_tsc();
+
     std::cout << "TickData Memory Layout:" << std::endl;
     std::cout << "  sizeof(TickData):  " << sizeof(hft::core::TickData)
               << " bytes" << std::endl;

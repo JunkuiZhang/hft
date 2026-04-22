@@ -55,7 +55,7 @@ void MockMdReceiver::threadLoop() {
         }
 
         // T1 Timestamp: Record CPU cycles exactly before pushing.
-        tick.local_timestamp = __rdtsc();
+        tick.local_timestamp = core::rdtsc_start();
 
         // Push data to the lock-free ring buffer
         // If queue is full, this will spin (or just drop the tick, we drop here

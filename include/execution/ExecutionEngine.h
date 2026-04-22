@@ -33,6 +33,7 @@ class ExecutionEngine {
     OrderQueue &queue_;
     std::atomic<bool> running_{false};
     std::thread worker_thread_;
+    std::vector<uint64_t> latency_stats_;
 };
 
 } // namespace execution
